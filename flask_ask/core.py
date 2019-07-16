@@ -338,7 +338,6 @@ class Ask(object):
         """Decorator routes an Connections.Response to the wrapped function.
 
         Request is sent when Alexa completes the setup flow.
-        See https://developer.amazon.com/docs/amazon-pay/amazon-pay-apis-for-alexa.html#setup
 
         The wrapped view function may accept parameters from the Request.
         In addition to locale, requestId, timestamp, and type
@@ -350,7 +349,6 @@ class Ask(object):
             logger.info(status)
             logger.info(token)
         """
-        logging.warn('Flask-Ask.core.on_setup_completed: MAPPING {}'.format(mapping))
         def decorator(f):
             self._intent_view_funcs['Connections.Response:Setup'] = f
             self._intent_mappings['Connections.Response:Setup'] = mapping
@@ -371,7 +369,6 @@ class Ask(object):
         """Decorator routes an Connections.Response to the wrapped function.
 
         Request is sent when Alexa completes the charge flow.
-        See https://developer.amazon.com/docs/amazon-pay/amazon-pay-apis-for-alexa.html#charge
 
         The wrapped view function may accept parameters from the Request.
         In addition to locale, requestId, timestamp, and type
@@ -383,7 +380,6 @@ class Ask(object):
             logger.info(status)
             logger.info(token)
         """
-        logging.warn('Flask-Ask.core.on_charge_completed: MAPPING {}'.format(mapping))
         def decorator(f):
             self._intent_view_funcs['Connections.Response:Charge'] = f
             self._intent_mappings['Connections.Response:Charge'] = mapping

@@ -5,6 +5,7 @@ import aniso8601
 from .core import session, context, current_stream, stream_cache, dbgdump
 from .cache import push_stream
 import uuid
+import logging
 
 
 class _Field(dict):
@@ -202,7 +203,7 @@ class question(_Response):
 
 
 class setupAmzPay(_Response):
-
+    # https://developer.amazon.com/docs/amazon-pay/amazon-pay-apis-for-alexa.html#setup
     def __init__(self, sellerId, sandboxMode=False, sandboxCustomerEmailId='', token='correlationTokenSetup'):
         setupPayload = {
             "@type": "SetupAmazonPayRequest",
@@ -216,6 +217,8 @@ class setupAmzPay(_Response):
             "sandboxCustomerEmailId": sandboxCustomerEmailId
         }
 
+        logging.info('flask_ask.setup POST Body: {}\n'.format(setupPayload))
+
         self._response = {
             'shouldEndSession': True,
             'directives': [{
@@ -228,9 +231,9 @@ class setupAmzPay(_Response):
 
 
 class chargeAmzPay(_Response):
-
+    #https://developer.amazon.com/docs/amazon-pay/amazon-pay-apis-for-alexa.html#charge
     def __init__(self, billingAgreementId, sellerId, amountStr, authorizationReferenceId, correlationToken=' '):
-        setupPayload = {
+        chargePayload = {
             "@type": "ChargeAmazonPayRequest",
             "@version": "2",
             "billingAgreementId": billingAgreementId,
@@ -251,12 +254,14 @@ class chargeAmzPay(_Response):
             }
         }
 
+        logging.info('flask_ask.charge POST Body: {}\n'.format(chargePayload))
+
         self._response = {
             'shouldEndSession': True,
             'directives': [{
               'type': 'Connections.SendRequest',
               'name': 'Charge',
-              'payload': setupPayload,
+              'payload': chargePayload,
               'token': correlationToken
             }]
         }
