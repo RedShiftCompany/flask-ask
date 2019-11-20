@@ -781,12 +781,24 @@ class Ask(object):
 
 
     def _alexa_request(self, verify=True):
-        alexa_request_payload = json.loads(flask_request.data)
+        raw_body = flask_request.data
+        alexa_request_payload = json.loads(raw_body)
 
         if verify:
+            cert_url = flask_request.headers['Signaturecertchainurl']
+            signature = flask_request.headers['Signature']
 
-            if not verifier.isValidAlexaRequest(flask_request):
-                raise Exception("Certificate verification failed")
+            # load certificate - this verifies a the certificate url and format under the hood
+            cert = verifier.load_certificate(cert_url)
+            # verify signature
+            verifier.verify_signature(cert, signature, raw_body)
+
+            # verify timestamp
+            raw_timestamp = alexa_request_payload.get('request', {}).get('timestamp')
+            timestamp = self._parse_timestamp(raw_timestamp)
+
+            if not current_app.debug or self.ask_verify_timestamp_debug:
+                verifier.verify_timestamp(timestamp)
 
             # verify application id
             try:
@@ -795,8 +807,7 @@ class Ask(object):
                 application_id = alexa_request_payload['context'][
                     'System']['application']['applicationId']
             if self.ask_application_id is not None:
-                if application_id not in self.ask_application_id:
-                    raise Exception("Application ID verification failed")
+                verifier.verify_application_id(application_id, self.ask_application_id)
 
         return alexa_request_payload
 
