@@ -13,10 +13,10 @@ def parse_requirements(filename):
 
 setup(
     name='Flask-Ask',
-    version='0.9.7',
+    version='0.9.8',
     url='https://github.com/RedShiftCompany/flask-ask',
     license='Apache 2.0',
-    author='RSVT, John Wheeler',
+    author='Matt Robinson, RSVT; John Wheeler',
     author_email='apps@redshiftcompany.com',
     description='Rapid Skills Kit Development for Echo Devices in Python. Forked from John Wheeler',
     long_description=__doc__,
