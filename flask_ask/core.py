@@ -1068,7 +1068,7 @@ class Slot(object):
                 self.code, slot_object.name, self.value))
 
         if slotValueNames:
-            if self.code == unicode('ER_SUCCESS_MATCH', 'utf8'):
+            if self.code == 'ER_SUCCESS_MATCH':
                 for v in slot_data[0]['values']:
                     self.entities.append(Entity(v['value']))
 
@@ -1091,13 +1091,21 @@ class State(object):
     SESSION_KEY = 'state'
 
     def __init__(self, session):
-        self._session = session
+        # self._session = session
         self.current = str(session.attributes.get(State.SESSION_KEY))
+        self.history = []
 
     def transition(self, state_id):
-        # state_id: str
+        self.history.append(self.current)
         self.current = state_id
-        self._session.attributes[State.SESSION_KEY] = self.current
+        # self._session.attributes[State.SESSION_KEY] = self.current
+
+    def revert(self):
+        #Alternatively: self.transition(self.history.pop())
+        self.current = self.history.pop()
+        # self._session.attributes[State.SESSION_KEY] = self.current
+
+
 
 
 class YamlLoader(BaseLoader):
