@@ -879,11 +879,8 @@ class Ask(object):
         except KeyError:
             self.session["dialogState"] = "unknown"
 
-        try:
-            if self.session.new and self._on_session_started_callback is not None:
-                self._on_session_started_callback()
-        except AttributeError:
-            pass
+        if self.session.new and self._on_session_started_callback is not None:
+            self._on_session_started_callback()
 
         result = None
         request_type = self.request.type
