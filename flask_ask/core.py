@@ -88,6 +88,7 @@ class Ask(object):
         self._launch_view_func = None
         self._session_ended_view_func = None
         self._on_session_started_callback = None
+        self._user_incomplete_view_func = None
         self._default_intent_view_func = None
         self._player_request_view_funcs = {}
         self._player_mappings = {}
@@ -191,6 +192,12 @@ class Ask(object):
             f {function} -- function to be called when session is started.
         """
         self._on_session_started_callback = f
+
+    def user_incomplete(self, f):
+        """Decorator to call wrapped function after on_session_start when state indicates the user cannot complete
+        an order. E.g. Amazon Profile permission, no linked account, or missing required fields such as email address.
+        """
+        self._user_incomplete_view_func = f
 
     def launch(self, f):
         """Decorator maps a view function as the endpoint for an Alexa LaunchRequest and starts the skill.
@@ -885,7 +892,9 @@ class Ask(object):
         result = None
         request_type = self.request.type
 
-        if request_type == 'LaunchRequest' and self._launch_view_func:
+        if self.state.current == 'USER_INCOMPLETE':
+            result = self._user_incomplete_view_func()
+        elif request_type == 'LaunchRequest' and self._launch_view_func:
             result = self._launch_view_func()
         elif request_type == 'SessionEndedRequest':
             if self._session_ended_view_func:
