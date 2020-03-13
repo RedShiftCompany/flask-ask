@@ -89,6 +89,7 @@ class Ask(object):
         self._session_ended_view_func = None
         self._on_session_started_callback = None
         self._user_incomplete_view_func = None
+        self._establishment_greeting_intent_view_func = None
         self._default_intent_view_func = None
         self._player_request_view_funcs = {}
         self._player_mappings = {}
@@ -278,6 +279,16 @@ class Ask(object):
                 self._flask_view_func(*args, **kw)
             return f
         return decorator
+
+    def establishment_greeting_intent(self, f):
+        """Decorator routes any Alexa IntentRequest that is not matched by any existing @ask.intent routing."""
+        self._establishment_greeting_intent_view_func = f
+
+        @wraps(f)
+        def wrapper(*args, **kw):
+            self._flask_view_func(*args, **kw)
+
+        return f
 
     def default_intent(self, f):
         """Decorator routes any Alexa IntentRequest that is not matched by any existing @ask.intent routing."""
@@ -926,6 +937,8 @@ class Ask(object):
 
         if intent_id in self._intent_view_funcs:
             view_func = self._intent_view_funcs[intent_id]
+        elif self.state.current == 'NEED_ESTABLISHMENT':
+            view_func = self._establishment_greeting_intent_view_func
         elif self._default_intent_view_func is not None:
             view_func = self._default_intent_view_func
         else:
