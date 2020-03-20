@@ -90,6 +90,7 @@ class Ask(object):
         self._on_session_started_callback = None
         self._user_incomplete_view_func = None
         self._establishment_greeting_intent_view_func = None
+        self._closed_greeting_intent_view_func = None
         self._default_intent_view_func = None
         self._player_request_view_funcs = {}
         self._player_mappings = {}
@@ -281,8 +282,18 @@ class Ask(object):
         return decorator
 
     def establishment_greeting_intent(self, f):
-        """Decorator routes any Alexa IntentRequest that is not matched by any existing @ask.intent routing."""
+        """Decorator routes any Alexa IntentRequest when app state 'NEED_ESTABLISHMENT'."""
         self._establishment_greeting_intent_view_func = f
+
+        @wraps(f)
+        def wrapper(*args, **kw):
+            self._flask_view_func(*args, **kw)
+
+        return f
+
+    def closed_greeting_intent(self, f):
+        """Decorator routes any Alexa IntentRequest when app state 'STORE_CLOSED'."""
+        self._closed_greeting_intent_view_func = f
 
         @wraps(f)
         def wrapper(*args, **kw):
@@ -939,6 +950,8 @@ class Ask(object):
             view_func = self._intent_view_funcs[intent_id]
         elif self.state.current == 'NEED_ESTABLISHMENT':
             view_func = self._establishment_greeting_intent_view_func
+        elif self.state.current == 'STORE_CLOSED':
+            view_func = self._closed_greeting_intent_view_func
         elif self._default_intent_view_func is not None:
             view_func = self._default_intent_view_func
         else:
