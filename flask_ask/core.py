@@ -269,7 +269,7 @@ class Ask(object):
         """
         def decorator(f):
             for s in list(state):
-                intent_id = intent_name, s
+                intent_id = intent_name.lower(), s
                 self._intent_view_funcs[intent_id] = f
                 self._intent_mappings[intent_id] = mapping
                 self._intent_converts[intent_id] = convert
@@ -944,7 +944,7 @@ class Ask(object):
 
     def _map_intent_to_view_func(self, intent):
         """Provides appropriate parameters to the intent functions."""
-        intent_id = intent.name, self.state.current
+        intent_id = intent.name.lower(), self.state.current
 
         if intent_id in self._intent_view_funcs:
             view_func = self._intent_view_funcs[intent_id]
@@ -1107,6 +1107,9 @@ class Slot(object):
         else:
             logging.info("flask_ask.core.Slot {}: '{}'. userSaid '{}'".format(
                 self.code, slot_object.name, self.value))
+
+    def __repr__(self):
+        return {'Slot Name': self.value}
 
 
 class Entity(object):
