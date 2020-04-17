@@ -810,18 +810,24 @@ class Ask(object):
         return None
 
     # Chatbase API: https://chatbase.com/documentation/generic
-    def _track_request(self, message="", botVersion="1.0"):
+    def _track_request(self, botVersion="0.1"):
         if not hasattr(self, 'trackingId'):
             return
 
-        if self.request.type in ['LaunchRequest', 'IntentRequest', 'SessionEndedRequest']:
+        notHandled = False
+        message = ""
+        if self.request.type in ['LaunchRequest', 'SessionEndedRequest']:
+            intentLabel = self.request.type
+        elif self.request.type == 'IntentRequest':
             if self.request.intent.name == 'CatchAllIntent':
                 intentLabel = None
                 notHandled = True
             else:
+                # Build a rich intent label and representation of what user said from current slots
                 intentLabel = "{}-{}".format(self.request.intent.name, self.state.current)
-                notHandled=False
-        else: # if 'Connections.Response' in request_type
+                message = '; '.join(['{}:{}'.format(slotName, slot) for slotName, slot in self.slots.items()])
+
+        else:  # 'Connections.Response' in request_type
             intentLabel = "{}-{}".format(self.request.name, self.state.current)
 
         msg = Message(api_key=self.trackingId,
@@ -830,16 +836,16 @@ class Ask(object):
                       user_id=self.context.System.user.userId,
                       message=message,
                       intent=intentLabel,
-                      session_id=self.session.application.applicationId,
-                      type=type,  # either "user" or "agent"
-                      not_handled=notHandled
                       )
+        if notHandled:
+            msg.set_as_not_handled()
+
         response = msg.send()
-        logging("Tracked Event with status {}".format(response['status']))
+        logging.info("Tracked Request '{}' for {} ".format(response.reason, msg.__dict__))
 
         # data = {
         #     "api_key": self.trackingId,
-        #     "time_stamp": 1,
+        #     "time_stamp": 1587141617079,
         #     "platform": "Alexa",
         #     "version": botVersion,
         #     "user_id": self.context.System.user.userId,
@@ -886,9 +892,6 @@ class Ask(object):
                     'System']['application']['applicationId']
             if self.ask_application_id is not None:
                 verifier.verify_application_id(application_id, self.ask_application_id)
-
-        # type, message=""
-        self._track_request()
 
         return alexa_request_payload
 
@@ -962,6 +965,8 @@ class Ask(object):
 
         if self.session.new and self._on_session_started_callback is not None:
             self._on_session_started_callback()
+
+        self._track_request()
 
         result = None
         request_type = self.request.type
@@ -1163,7 +1168,12 @@ class Slot(object):
                 self.code, slot_object.name, self.value))
 
     def __repr__(self):
-        return {'Slot Name': self.value}
+        return {'User Said': self.value,
+                'Slots Matched': ', '.join([e.name for e in self.entities])
+                }
+
+    def __str__(self):
+        return "User Said: '{}'".format(self.value)
 
 
 class Entity(object):
