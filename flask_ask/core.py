@@ -843,22 +843,6 @@ class Ask(object):
         response = msg.send()
         logging.info("Tracked Request '{}' for {} ".format(response.reason, msg.__dict__))
 
-        # data = {
-        #     "api_key": self.trackingId,
-        #     "time_stamp": 1587141617079,
-        #     "platform": "Alexa",
-        #     "version": botVersion,
-        #     "user_id": self.context.System.user.userId,
-        #     "session_id": self.session.application.applicationId,
-        #     "type": type,  #either "user" or "agent"
-        #     "intent": intentLabel,
-        #     "message": message,
-        #     "not_handled": notHandled
-        #   }
-        #
-        # response = requests.post('https://chatbase-area120.appspot.com/api/message', data=data)
-        # logging("Tracked Event with status {} :{}".format(response['status'], data))
-
         # If the request fails, this will raise a RequestException. Depending
         # on your application's needs, this may be a non-error and can be caught
         # by the caller.
@@ -874,6 +858,7 @@ class Ask(object):
                       user_id=self.context.System.user.userId,
                       message=message,
                       )
+        msg.set_as_type_agent()
 
         response = msg.send()
         logging.info("Tracked Response '{}' for {} ".format(response.reason, msg.__dict__))
