@@ -864,6 +864,22 @@ class Ask(object):
         # by the caller.
         response.raise_for_status()
 
+    def _track_response(self, message="", botVersion="0.1"):
+        if not hasattr(self, 'trackingId'):
+            return
+
+        msg = Message(api_key=self.trackingId,
+                      platform="Alexa",
+                      version=botVersion,
+                      user_id=self.context.System.user.userId,
+                      message=message,
+                      )
+
+        response = msg.send()
+        logging.info("Tracked Response '{}' for {} ".format(response.reason, msg.__dict__))
+
+        response.raise_for_status()
+
     def _alexa_request(self, verify=True):
         raw_body = flask_request.data
         alexa_request_payload = json.loads(raw_body)
@@ -994,11 +1010,20 @@ class Ask(object):
             result = self._map_purchase_request_to_func(self.request.type)()
 
         if result is not None:
-            if isinstance(result, models._Response):
-                #type, intentName, stateName, message = "", notHandled = "false"
-                #_track_event('agent', message= # result['session_end'])
-                return result.render_response(), {'Content-Type':'application/json'} 
-            return result
+            if isinstance(result, tuple):
+                return result
+
+            response = json.loads(result.render_response())['response']
+            if 'outputSpeech' in response.keys():
+                resultMessage = "sessionEnd{}:'{}'".format(
+                    response['shouldEndSession'], response['outputSpeech']['text'])
+            else:  # directive response
+                resultMessage = "sessionEnd{}:'{}' Directive".format(
+                    response['shouldEndSession'], response['directives'][0]['name'])
+
+            self._track_response(message=resultMessage)
+            return result.render_response(), {'Content-Type': 'application/json'}
+
         return "", 400
 
     def _map_intent_to_view_func(self, intent):
