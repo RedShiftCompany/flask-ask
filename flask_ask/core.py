@@ -18,6 +18,7 @@ from .convert import to_date, to_time, to_timedelta
 from .cache import top_stream, set_stream
 import collections
 
+from chatbase import Message
 
 def find_ask():
     """
@@ -808,6 +809,54 @@ class Ask(object):
             return self.context.get('System', {}).get('user', {}).get('userId')
         return None
 
+    # Chatbase API: https://chatbase.com/documentation/generic
+    def _track_request(self, message="", botVersion="1.0"):
+        if not hasattr(self, 'trackingId'):
+            return
+
+        if self.request.type in ['LaunchRequest', 'IntentRequest', 'SessionEndedRequest']:
+            if self.request.intent.name == 'CatchAllIntent':
+                intentLabel = None
+                notHandled = True
+            else:
+                intentLabel = "{}-{}".format(self.request.intent.name, self.state.current)
+                notHandled=False
+        else: # if 'Connections.Response' in request_type
+            intentLabel = "{}-{}".format(self.request.name, self.state.current)
+
+        msg = Message(api_key=self.trackingId,
+                      platform="Alexa",
+                      version=botVersion,
+                      user_id=self.context.System.user.userId,
+                      message=message,
+                      intent=intentLabel,
+                      session_id=self.session.application.applicationId,
+                      type=type,  # either "user" or "agent"
+                      not_handled=notHandled
+                      )
+        response = msg.send()
+        logging("Tracked Event with status {}".format(response['status']))
+
+        # data = {
+        #     "api_key": self.trackingId,
+        #     "time_stamp": 1,
+        #     "platform": "Alexa",
+        #     "version": botVersion,
+        #     "user_id": self.context.System.user.userId,
+        #     "session_id": self.session.application.applicationId,
+        #     "type": type,  #either "user" or "agent"
+        #     "intent": intentLabel,
+        #     "message": message,
+        #     "not_handled": notHandled
+        #   }
+        #
+        # response = requests.post('https://chatbase-area120.appspot.com/api/message', data=data)
+        # logging("Tracked Event with status {} :{}".format(response['status'], data))
+
+        # If the request fails, this will raise a RequestException. Depending
+        # on your application's needs, this may be a non-error and can be caught
+        # by the caller.
+        response.raise_for_status()
 
     def _alexa_request(self, verify=True):
         raw_body = flask_request.data
@@ -837,6 +886,9 @@ class Ask(object):
                     'System']['application']['applicationId']
             if self.ask_application_id is not None:
                 verifier.verify_application_id(application_id, self.ask_application_id)
+
+        # type, message=""
+        self._track_request()
 
         return alexa_request_payload
 
@@ -938,6 +990,8 @@ class Ask(object):
 
         if result is not None:
             if isinstance(result, models._Response):
+                #type, intentName, stateName, message = "", notHandled = "false"
+                #_track_event('agent', message= # result['session_end'])
                 return result.render_response(), {'Content-Type':'application/json'} 
             return result
         return "", 400
