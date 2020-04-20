@@ -18,6 +18,7 @@ from .convert import to_date, to_time, to_timedelta
 from .cache import top_stream, set_stream
 import collections
 
+from chatbase import Message
 
 def find_ask():
     """
@@ -808,6 +809,63 @@ class Ask(object):
             return self.context.get('System', {}).get('user', {}).get('userId')
         return None
 
+    # Chatbase API: https://chatbase.com/documentation/generic
+    def _track_request(self, botVersion="0.1"):
+        if not hasattr(self, 'trackingId'):
+            return
+
+        notHandled = False
+        message = ""
+        brand = self.session.attributes['skill_configuration']['brand']
+        intentLabel = brand
+        if self.request.type in ['LaunchRequest', 'SessionEndedRequest']:
+            intentLabel += ": " + self.request.type
+        elif self.request.type == 'IntentRequest':
+            if self.request.intent.name == 'CatchAllIntent':
+                notHandled = True
+
+            # Build a rich intent label and representation of what user said from current slots
+            intentLabel += ": {}-{}".format(self.request.intent.name, self.state.current)
+            message = '; '.join(['{}:{}'.format(slotName, slot) for slotName, slot in self.slots.items()])
+
+        else:  # 'Connections.Response' in request_type
+            intentLabel += ": {}-{}".format(self.request.name, self.state.current)
+
+        msg = Message(api_key=self.trackingId,
+                      platform="Alexa",
+                      version=botVersion,
+                      user_id=self.context.System.user.userId,
+                      message=message,
+                      intent=intentLabel,
+                      )
+        if notHandled:
+            msg.set_as_not_handled()
+
+        response = msg.send()
+        logging.info("Tracked Request '{}' for {} ".format(response.reason, msg.__dict__))
+
+        # If the request fails, this will raise a RequestException. Depending
+        # on your application's needs, this may be a non-error and can be caught
+        # by the caller.
+        response.raise_for_status()
+
+    def _track_response(self, message="", intentLabel="", botVersion="0.1"):
+        if not hasattr(self, 'trackingId'):
+            return
+
+        msg = Message(api_key=self.trackingId,
+                      platform="Alexa",
+                      version=botVersion,
+                      user_id=self.context.System.user.userId,
+                      message=message,
+                      intent=intentLabel,
+                      )
+        msg.set_as_type_agent()
+
+        response = msg.send()
+        logging.info("Tracked Response '{}' for {} ".format(response.reason, msg.to_json()))
+
+        response.raise_for_status()
 
     def _alexa_request(self, verify=True):
         raw_body = flask_request.data
@@ -911,6 +969,8 @@ class Ask(object):
         if self.session.new and self._on_session_started_callback is not None:
             self._on_session_started_callback()
 
+        self._track_request()
+
         result = None
         request_type = self.request.type
 
@@ -937,9 +997,24 @@ class Ask(object):
             result = self._map_purchase_request_to_func(self.request.type)()
 
         if result is not None:
-            if isinstance(result, models._Response):
-                return result.render_response(), {'Content-Type':'application/json'} 
-            return result
+            if isinstance(result, tuple):
+                return result
+
+            fullResponse = json.loads(result.render_response())
+            response = fullResponse['response']
+
+            if 'outputSpeech' in response.keys():
+                resultMessage = "{}".format(response['outputSpeech']['text'])
+            else:  # directive response
+                resultMessage = "Alexa Directive: {}".format(response['directives'][0]['name'])
+
+            sessionAttributes = fullResponse['sessionAttributes']
+            brand = sessionAttributes['skill_configuration']['brand']
+            resultIntent = '{} sessionEnd{}'.format(brand, response['shouldEndSession'])
+
+            self._track_response(message=resultMessage, intentLabel=resultIntent)
+            return result.render_response(), {'Content-Type': 'application/json'}
+
         return "", 400
 
     def _map_intent_to_view_func(self, intent):
@@ -1109,7 +1184,12 @@ class Slot(object):
                 self.code, slot_object.name, self.value))
 
     def __repr__(self):
-        return {'Slot Name': self.value}
+        return {'User Said': self.value,
+                'Slots Matched': ', '.join([e.name for e in self.entities])
+                }
+
+    def __str__(self):
+        return "User Said: '{}'".format(self.value)
 
 
 class Entity(object):
