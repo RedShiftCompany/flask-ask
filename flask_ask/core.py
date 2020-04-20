@@ -816,19 +816,20 @@ class Ask(object):
 
         notHandled = False
         message = ""
+        brand = self.session.attributes['skill_configuration']['brand']
+        intentLabel = brand
         if self.request.type in ['LaunchRequest', 'SessionEndedRequest']:
-            intentLabel = self.request.type
+            intentLabel += ": " + self.request.type
         elif self.request.type == 'IntentRequest':
             if self.request.intent.name == 'CatchAllIntent':
-                intentLabel = None
                 notHandled = True
-            else:
-                # Build a rich intent label and representation of what user said from current slots
-                intentLabel = "{}-{}".format(self.request.intent.name, self.state.current)
-                message = '; '.join(['{}:{}'.format(slotName, slot) for slotName, slot in self.slots.items()])
+
+            # Build a rich intent label and representation of what user said from current slots
+            intentLabel += ": {}-{}".format(self.request.intent.name, self.state.current)
+            message = '; '.join(['{}:{}'.format(slotName, slot) for slotName, slot in self.slots.items()])
 
         else:  # 'Connections.Response' in request_type
-            intentLabel = "{}-{}".format(self.request.name, self.state.current)
+            intentLabel += ": {}-{}".format(self.request.name, self.state.current)
 
         msg = Message(api_key=self.trackingId,
                       platform="Alexa",
@@ -848,7 +849,7 @@ class Ask(object):
         # by the caller.
         response.raise_for_status()
 
-    def _track_response(self, message="", botVersion="0.1"):
+    def _track_response(self, message="", intentLabel="", botVersion="0.1"):
         if not hasattr(self, 'trackingId'):
             return
 
@@ -857,11 +858,12 @@ class Ask(object):
                       version=botVersion,
                       user_id=self.context.System.user.userId,
                       message=message,
+                      intent=intentLabel,
                       )
         msg.set_as_type_agent()
 
         response = msg.send()
-        logging.info("Tracked Response '{}' for {} ".format(response.reason, msg.__dict__))
+        logging.info("Tracked Response '{}' for {} ".format(response.reason, msg.to_json()))
 
         response.raise_for_status()
 
@@ -998,15 +1000,19 @@ class Ask(object):
             if isinstance(result, tuple):
                 return result
 
-            response = json.loads(result.render_response())['response']
-            if 'outputSpeech' in response.keys():
-                resultMessage = "sessionEnd{}:'{}'".format(
-                    response['shouldEndSession'], response['outputSpeech']['text'])
-            else:  # directive response
-                resultMessage = "sessionEnd{}:'{}' Directive".format(
-                    response['shouldEndSession'], response['directives'][0]['name'])
+            fullResponse = json.loads(result.render_response())
+            response = fullResponse['response']
 
-            self._track_response(message=resultMessage)
+            if 'outputSpeech' in response.keys():
+                resultMessage = "{}".format(response['outputSpeech']['text'])
+            else:  # directive response
+                resultMessage = "Alexa Directive: {}".format(response['directives'][0]['name'])
+
+            sessionAttributes = fullResponse['sessionAttributes']
+            brand = sessionAttributes['skill_configuration']['brand']
+            resultIntent = '{} sessionEnd{}'.format(brand, response['shouldEndSession'])
+
+            self._track_response(message=resultMessage, intentLabel=resultIntent)
             return result.render_response(), {'Content-Type': 'application/json'}
 
         return "", 400
