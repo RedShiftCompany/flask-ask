@@ -18,6 +18,7 @@ from .convert import to_date, to_time, to_timedelta
 from .cache import top_stream, set_stream
 import collections
 
+from chatbase import Message
 
 def find_ask():
     """
@@ -88,6 +89,9 @@ class Ask(object):
         self._launch_view_func = None
         self._session_ended_view_func = None
         self._on_session_started_callback = None
+        self._user_incomplete_view_func = None
+        self._establishment_greeting_intent_view_func = None
+        self._closed_greeting_intent_view_func = None
         self._default_intent_view_func = None
         self._player_request_view_funcs = {}
         self._player_mappings = {}
@@ -192,6 +196,12 @@ class Ask(object):
         """
         self._on_session_started_callback = f
 
+    def user_incomplete(self, f):
+        """Decorator to call wrapped function after on_session_start when state indicates the user cannot complete
+        an order. E.g. Amazon Profile permission, no linked account, or missing required fields such as email address.
+        """
+        self._user_incomplete_view_func = f
+
     def launch(self, f):
         """Decorator maps a view function as the endpoint for an Alexa LaunchRequest and starts the skill.
 
@@ -260,7 +270,7 @@ class Ask(object):
         """
         def decorator(f):
             for s in list(state):
-                intent_id = intent_name, s
+                intent_id = intent_name.lower(), s
                 self._intent_view_funcs[intent_id] = f
                 self._intent_mappings[intent_id] = mapping
                 self._intent_converts[intent_id] = convert
@@ -271,6 +281,26 @@ class Ask(object):
                 self._flask_view_func(*args, **kw)
             return f
         return decorator
+
+    def establishment_greeting_intent(self, f):
+        """Decorator routes any Alexa IntentRequest when app state 'NEED_ESTABLISHMENT'."""
+        self._establishment_greeting_intent_view_func = f
+
+        @wraps(f)
+        def wrapper(*args, **kw):
+            self._flask_view_func(*args, **kw)
+
+        return f
+
+    def closed_greeting_intent(self, f):
+        """Decorator routes any Alexa IntentRequest when app state 'STORE_CLOSED'."""
+        self._closed_greeting_intent_view_func = f
+
+        @wraps(f)
+        def wrapper(*args, **kw):
+            self._flask_view_func(*args, **kw)
+
+        return f
 
     def default_intent(self, f):
         """Decorator routes any Alexa IntentRequest that is not matched by any existing @ask.intent routing."""
@@ -779,14 +809,82 @@ class Ask(object):
             return self.context.get('System', {}).get('user', {}).get('userId')
         return None
 
+    # Chatbase API: https://chatbase.com/documentation/generic
+    def _track_request(self, botVersion="0.1"):
+        trackingId = self.session.attributes.get('skill_configuration', {}).get('trackingId')
+        if not trackingId:
+            return
+
+        notHandled = False
+        message = ""
+        intentLabel = "{}-{}".format(self.request.name, self.state.current)
+        if self.request.type in ['LaunchRequest', 'SessionEndedRequest']:
+            intentLabel = self.request.type
+        elif self.request.type == 'IntentRequest':
+            if self.request.intent.name == 'CatchAllIntent':
+                notHandled = True
+
+            # Build a rich intent label and representation of what user said from current slots
+            intentLabel = "{}-{}".format(self.request.intent.name, self.state.current)
+            message = '; '.join(['{}:{}'.format(slotName, slot) for slotName, slot in self.slots.items()])
+        # else:  'Connections.Response' in request_type
+
+        msg = Message(api_key=trackingId,
+                      platform="Alexa",
+                      version=botVersion,
+                      user_id=self.context.System.user.userId,
+                      message=message,
+                      intent=intentLabel,
+                      )
+        if notHandled:
+            msg.set_as_not_handled()
+
+        response = msg.send()
+        logging.info("Tracked Request '{}' for {} ".format(response.reason, msg.__dict__))
+
+        # If the request fails, this will raise a RequestException. Depending
+        # on your application's needs, this may be a non-error and can be caught
+        # by the caller.
+        response.raise_for_status()
+
+    def _track_response(self, message="", intentLabel="", botVersion="0.1"):
+        trackingId = self.session.attributes.get('skill_configuration', {}).get('trackingId')
+        if not trackingId:
+            return
+
+        msg = Message(api_key=trackingId,
+                      platform="Alexa",
+                      version=botVersion,
+                      user_id=self.context.System.user.userId,
+                      message=message,
+                      intent=intentLabel,
+                      )
+        msg.set_as_type_agent()
+
+        response = msg.send()
+        logging.info("Tracked Response '{}' for {} ".format(response.reason, msg.to_json()))
+
+        response.raise_for_status()
 
     def _alexa_request(self, verify=True):
-        alexa_request_payload = json.loads(flask_request.data)
+        raw_body = flask_request.data
+        alexa_request_payload = json.loads(raw_body)
 
         if verify:
+            cert_url = flask_request.headers['Signaturecertchainurl']
+            signature = flask_request.headers['Signature']
 
-            if not verifier.isValidAlexaRequest(flask_request):
-                raise Exception("Certificate verification failed")
+            # load certificate - this verifies a the certificate url and format under the hood
+            cert = verifier.load_certificate(cert_url)
+            # verify signature
+            verifier.verify_signature(cert, signature, raw_body)
+
+            # verify timestamp
+            raw_timestamp = alexa_request_payload.get('request', {}).get('timestamp')
+            timestamp = self._parse_timestamp(raw_timestamp)
+
+            if not current_app.debug or self.ask_verify_timestamp_debug:
+                verifier.verify_timestamp(timestamp)
 
             # verify application id
             try:
@@ -795,8 +893,7 @@ class Ask(object):
                 application_id = alexa_request_payload['context'][
                     'System']['application']['applicationId']
             if self.ask_application_id is not None:
-                if application_id not in self.ask_application_id:
-                    raise Exception("Application ID verification failed")
+                verifier.verify_application_id(application_id, self.ask_application_id)
 
         return alexa_request_payload
 
@@ -868,16 +965,17 @@ class Ask(object):
         except KeyError:
             self.session["dialogState"] = "unknown"
 
-        try:
-            if self.session.new and self._on_session_started_callback is not None:
-                self._on_session_started_callback()
-        except AttributeError:
-            pass
+        if self.session.new and self._on_session_started_callback is not None:
+            self._on_session_started_callback()
+
+        self._track_request()
 
         result = None
         request_type = self.request.type
 
-        if request_type == 'LaunchRequest' and self._launch_view_func:
+        if self.state.current == 'USER_INCOMPLETE':
+            result = self._user_incomplete_view_func()
+        elif request_type == 'LaunchRequest' and self._launch_view_func:
             result = self._launch_view_func()
         elif request_type == 'SessionEndedRequest':
             if self._session_ended_view_func:
@@ -898,17 +996,34 @@ class Ask(object):
             result = self._map_purchase_request_to_func(self.request.type)()
 
         if result is not None:
-            if isinstance(result, models._Response):
-                return result.render_response()
-            return result
+            if isinstance(result, tuple):
+                return result
+
+            fullResponse = json.loads(result.render_response())
+            response = fullResponse['response']
+
+            if 'outputSpeech' in response.keys():
+                resultMessage = "{}".format(response['outputSpeech']['text'])
+            else:  # directive response
+                resultMessage = "Alexa Directive: {}".format(response['directives'][0]['name'])
+
+            resultIntent = 'sessionEnd{}'.format(response['shouldEndSession'])
+
+            self._track_response(message=resultMessage, intentLabel=resultIntent)
+            return result.render_response(), {'Content-Type': 'application/json'}
+
         return "", 400
 
     def _map_intent_to_view_func(self, intent):
         """Provides appropriate parameters to the intent functions."""
-        intent_id = intent.name, self.state.current
+        intent_id = intent.name.lower(), self.state.current
 
         if intent_id in self._intent_view_funcs:
             view_func = self._intent_view_funcs[intent_id]
+        elif self.state.current == 'NEED_ESTABLISHMENT':
+            view_func = self._establishment_greeting_intent_view_func
+        elif self.state.current == 'STORE_CLOSED':
+            view_func = self._closed_greeting_intent_view_func
         elif self._default_intent_view_func is not None:
             view_func = self._default_intent_view_func
         else:
@@ -1057,13 +1172,21 @@ class Slot(object):
                 self.code, slot_object.name, self.value))
 
         if slotValueNames:
-            if self.code == unicode('ER_SUCCESS_MATCH', 'utf8'):
+            if self.code == 'ER_SUCCESS_MATCH':
                 for v in slot_data[0]['values']:
                     self.entities.append(Entity(v['value']))
 
         else:
             logging.info("flask_ask.core.Slot {}: '{}'. userSaid '{}'".format(
                 self.code, slot_object.name, self.value))
+
+    def __repr__(self):
+        return {'User Said': self.value,
+                'Slots Matched': ', '.join([e.name for e in self.entities])
+                }
+
+    def __str__(self):
+        return "User Said: '{}'".format(self.value)
 
 
 class Entity(object):
@@ -1082,11 +1205,19 @@ class State(object):
     def __init__(self, session):
         self._session = session
         self.current = str(session.attributes.get(State.SESSION_KEY))
+        self.history = []
 
     def transition(self, state_id):
-        # state_id: str
+        self.history.append(self.current)
         self.current = state_id
         self._session.attributes[State.SESSION_KEY] = self.current
+
+    def revert(self):
+        #Alternatively: self.transition(self.history.pop())
+        self.current = self.history.pop()
+        self._session.attributes[State.SESSION_KEY] = self.current
+
+
 
 
 class YamlLoader(BaseLoader):
