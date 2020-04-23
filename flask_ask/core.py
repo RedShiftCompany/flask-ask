@@ -811,27 +811,25 @@ class Ask(object):
 
     # Chatbase API: https://chatbase.com/documentation/generic
     def _track_request(self, botVersion="0.1"):
-        if not hasattr(self, 'trackingId'):
+        trackingId = self.session.attributes.get('skill_configuration', {}).get('trackingId')
+        if not trackingId:
             return
 
         notHandled = False
         message = ""
-        brand = self.session.attributes['skill_configuration']['brand']
-        intentLabel = brand
+        intentLabel = "{}-{}".format(self.request.name, self.state.current)
         if self.request.type in ['LaunchRequest', 'SessionEndedRequest']:
-            intentLabel += ": " + self.request.type
+            intentLabel = self.request.type
         elif self.request.type == 'IntentRequest':
             if self.request.intent.name == 'CatchAllIntent':
                 notHandled = True
 
             # Build a rich intent label and representation of what user said from current slots
-            intentLabel += ": {}-{}".format(self.request.intent.name, self.state.current)
+            intentLabel = "{}-{}".format(self.request.intent.name, self.state.current)
             message = '; '.join(['{}:{}'.format(slotName, slot) for slotName, slot in self.slots.items()])
+        # else:  'Connections.Response' in request_type
 
-        else:  # 'Connections.Response' in request_type
-            intentLabel += ": {}-{}".format(self.request.name, self.state.current)
-
-        msg = Message(api_key=self.trackingId,
+        msg = Message(api_key=trackingId,
                       platform="Alexa",
                       version=botVersion,
                       user_id=self.context.System.user.userId,
@@ -850,10 +848,11 @@ class Ask(object):
         response.raise_for_status()
 
     def _track_response(self, message="", intentLabel="", botVersion="0.1"):
-        if not hasattr(self, 'trackingId'):
+        trackingId = self.session.attributes.get('skill_configuration', {}).get('trackingId')
+        if not trackingId:
             return
 
-        msg = Message(api_key=self.trackingId,
+        msg = Message(api_key=trackingId,
                       platform="Alexa",
                       version=botVersion,
                       user_id=self.context.System.user.userId,
@@ -1008,9 +1007,7 @@ class Ask(object):
             else:  # directive response
                 resultMessage = "Alexa Directive: {}".format(response['directives'][0]['name'])
 
-            sessionAttributes = fullResponse['sessionAttributes']
-            brand = sessionAttributes['skill_configuration']['brand']
-            resultIntent = '{} sessionEnd{}'.format(brand, response['shouldEndSession'])
+            resultIntent = 'sessionEnd{}'.format(response['shouldEndSession'])
 
             self._track_response(message=resultMessage, intentLabel=resultIntent)
             return result.render_response(), {'Content-Type': 'application/json'}
