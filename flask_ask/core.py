@@ -1007,7 +1007,7 @@ class Ask(object):
             else:  # directive response
                 resultMessage = "Alexa Directive: {}".format(response['directives'][0]['name'])
 
-            resultIntent = 'sessionEnd{}'.format(response['shouldEndSession'])
+            resultIntent = 'sessionEnd{}-{}'.format(response['shouldEndSession'], self.state.current)
 
             self._track_response(message=resultMessage, intentLabel=resultIntent)
             return result.render_response(), {'Content-Type': 'application/json'}
