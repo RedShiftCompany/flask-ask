@@ -81,6 +81,7 @@ class Ask(object):
 
     def __init__(self, app=None, route=None, blueprint=None, stream_cache=None, path='templates.yaml'):
         self.app = app
+        self.trackingVersion = '0.1'
         self._route = route
         self._intent_view_funcs = {}
         self._intent_converts = {}
@@ -810,7 +811,7 @@ class Ask(object):
         return None
 
     # Chatbase API: https://chatbase.com/documentation/generic
-    def _track_request(self, botVersion="0.1"):
+    def _track_request(self):
         trackingId = self.session.attributes.get('skill_configuration', {}).get('trackingId')
         if not trackingId:
             return
@@ -831,7 +832,7 @@ class Ask(object):
 
         msg = Message(api_key=trackingId,
                       platform="Alexa",
-                      version=botVersion,
+                      version=self.trackingVersion,
                       user_id=self.context.System.user.userId,
                       message=message,
                       intent=intentLabel,
@@ -847,14 +848,14 @@ class Ask(object):
         # by the caller.
         response.raise_for_status()
 
-    def _track_response(self, message="", intentLabel="", botVersion="0.1"):
+    def _track_response(self, message="", intentLabel=""):
         trackingId = self.session.attributes.get('skill_configuration', {}).get('trackingId')
         if not trackingId:
             return
 
         msg = Message(api_key=trackingId,
                       platform="Alexa",
-                      version=botVersion,
+                      version=self.trackingVersion,
                       user_id=self.context.System.user.userId,
                       message=message,
                       intent=intentLabel,
@@ -967,6 +968,7 @@ class Ask(object):
 
         if self.session.new and self._on_session_started_callback is not None:
             self._on_session_started_callback()
+            self._track_request()
 
         self._track_request()
 
