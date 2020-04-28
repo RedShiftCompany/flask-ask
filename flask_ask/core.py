@@ -20,6 +20,8 @@ import collections
 
 from chatbase import Message
 
+AGENT_VERSION = os.environ.get('AGENT_VERSION', '1.0')
+
 def find_ask():
     """
     Find our instance of Ask, navigating Local's and possible blueprints.
@@ -81,7 +83,6 @@ class Ask(object):
 
     def __init__(self, app=None, route=None, blueprint=None, stream_cache=None, path='templates.yaml'):
         self.app = app
-        self.trackingVersion = '0.1'
         self._route = route
         self._intent_view_funcs = {}
         self._intent_converts = {}
@@ -832,7 +833,7 @@ class Ask(object):
 
         msg = Message(api_key=trackingId,
                       platform="Alexa",
-                      version=self.trackingVersion,
+                      version=AGENT_VERSION,
                       user_id=self.context.System.user.userId,
                       message=message,
                       intent=intentLabel,
@@ -855,7 +856,7 @@ class Ask(object):
 
         msg = Message(api_key=trackingId,
                       platform="Alexa",
-                      version=self.trackingVersion,
+                      version=AGENT_VERSION,
                       user_id=self.context.System.user.userId,
                       message=message,
                       intent=intentLabel,
