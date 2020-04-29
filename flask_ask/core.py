@@ -842,12 +842,7 @@ class Ask(object):
             msg.set_as_not_handled()
 
         response = msg.send()
-        logging.info("Tracked Request '{}' for {} ".format(response.reason, msg.__dict__))
-
-        # If the request fails, this will raise a RequestException. Depending
-        # on your application's needs, this may be a non-error and can be caught
-        # by the caller.
-        response.raise_for_status()
+        logging.info("Tracked Request '{}' for {} ".format(response.reason, msg.to_json()))
 
     def _track_response(self, message="", intentLabel=""):
         trackingId = self.session.attributes.get('skill_configuration', {}).get('trackingId')
@@ -865,8 +860,6 @@ class Ask(object):
 
         response = msg.send()
         logging.info("Tracked Response '{}' for {} ".format(response.reason, msg.to_json()))
-
-        response.raise_for_status()
 
     def _alexa_request(self, verify=True):
         raw_body = flask_request.data
@@ -969,7 +962,6 @@ class Ask(object):
 
         if self.session.new and self._on_session_started_callback is not None:
             self._on_session_started_callback()
-            self._track_request()
 
         self._track_request()
 
