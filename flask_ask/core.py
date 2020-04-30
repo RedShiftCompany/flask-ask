@@ -820,16 +820,18 @@ class Ask(object):
         notHandled = False
         message = ""
         intentLabel = "{}-{}".format(self.request.name, self.state.current)
-        if self.request.type in ['LaunchRequest', 'SessionEndedRequest']:
-            intentLabel = self.request.type
-        elif self.request.type == 'IntentRequest':
+        if self.request.type == 'IntentRequest':
             if self.request.intent.name == 'CatchAllIntent':
                 notHandled = True
 
             # Build a rich intent label and representation of what user said from current slots
             intentLabel = "{}-{}".format(self.request.intent.name, self.state.current)
             message = '; '.join(['{}:{}'.format(slotName, slot) for slotName, slot in self.slots.items()])
-        # else:  'Connections.Response' in request_type
+        elif self.request.type == 'SessionEndedRequest':
+            intentLabel = "{}-{}".format(self.request.type, self.request.reason)
+            message = "{}: {}".format(self.request.error.type, self.request.error.message)
+        else:  # requests that do not have message information ('LaunchRequest' or 'Connections.Response')
+            intentLabel = self.request.type
 
         msg = Message(api_key=trackingId,
                       platform="Alexa",
