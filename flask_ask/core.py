@@ -829,7 +829,10 @@ class Ask(object):
             message = '; '.join(['{}:{}'.format(slotName, slot) for slotName, slot in self.slots.items()])
         elif self.request.type == 'SessionEndedRequest':
             intentLabel = "{}-{}".format(self.request.type, self.request.reason)
-            message = "{}: {}".format(self.request.error.type, self.request.error.message)
+            try:
+                message = "{}: {}".format(self.request.error.type, self.request.error.message)
+            except AttributeError:
+                message = "No Error"
         else:  # requests that do not have message information ('LaunchRequest' or 'Connections.Response')
             intentLabel = self.request.type
 
